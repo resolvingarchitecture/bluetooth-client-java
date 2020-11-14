@@ -1,15 +1,18 @@
 package ra.bluetooth;
 
-import ra.common.Network;
-import ra.common.NetworkPeer;
-import ra.common.PublicKey;
+import ra.common.identity.PublicKey;
+import ra.common.network.Network;
+import ra.common.network.NetworkPeer;
+import ra.common.network.NetworkStatus;
+import ra.common.service.ServiceStatus;
+import ra.util.tasks.BaseTask;
 import ra.util.tasks.TaskRunner;
 
 import javax.bluetooth.*;
 import java.io.IOException;
 import java.util.logging.Logger;
 
-public class BluetoothDeviceDiscovery extends NetworkTask implements DiscoveryListener {
+public class BluetoothDeviceDiscovery extends BaseTask implements DiscoveryListener {
 
     private static Logger LOG = Logger.getLogger(BluetoothDeviceDiscovery.class.getName());
 
@@ -17,10 +20,11 @@ public class BluetoothDeviceDiscovery extends NetworkTask implements DiscoveryLi
     private int result;
     private NetworkPeer currentPeer;
     private RemoteDevice currentDevice;
+    private BluetoothService service;
 
-    public BluetoothDeviceDiscovery(BluetoothSensor sensor, TaskRunner taskRunner) {
-        super(BluetoothDeviceDiscovery.class.getName(), taskRunner, sensor);
-        this.sensor = sensor;
+    public BluetoothDeviceDiscovery(BluetoothService service, TaskRunner taskRunner) {
+        super(BluetoothDeviceDiscovery.class.getName(), taskRunner);
+        this.service = service;
     }
 
     public int getResult() {
@@ -34,7 +38,7 @@ public class BluetoothDeviceDiscovery extends NetworkTask implements DiscoveryLi
             RemoteDevice[] devices = LocalDevice.getLocalDevice().getDiscoveryAgent().retrieveDevices(DiscoveryAgent.CACHED);
             if(devices!=null) {
                 for(RemoteDevice device : devices) {
-                    ((BluetoothSensor)sensor).devices.put(device.getBluetoothAddress(), device);
+                    service.devices.put(device.getBluetoothAddress(), device);
                 }
             }
         } catch (BluetoothStateException e) {
@@ -68,7 +72,7 @@ public class BluetoothDeviceDiscovery extends NetworkTask implements DiscoveryLi
         String msg = "Device " + remoteDevice.getBluetoothAddress() + " found.";
         currentDevice = remoteDevice;
         try {
-            currentPeer = new NetworkPeer(Network.Bluetooth, remoteDevice.getFriendlyName(true), "1234");
+            currentPeer = new NetworkPeer(Network.Bluetooth.name(), remoteDevice.getFriendlyName(true), "1234");
             PublicKey pk = currentPeer.getDid().getPublicKey();
             pk.setAddress(remoteDevice.getBluetoothAddress());
             pk.addAttribute("isAuthenticated", remoteDevice.isAuthenticated());
@@ -90,8 +94,8 @@ public class BluetoothDeviceDiscovery extends NetworkTask implements DiscoveryLi
             case DiscoveryListener.INQUIRY_COMPLETED : {
                 LOG.info("Bluetooth inquiry completed. Caching peer.");
                 if(currentDevice!=null) {
-                    ((BluetoothSensor) sensor).devices.put(currentDevice.getBluetoothAddress(), currentDevice);
-                    ((BluetoothSensor) sensor).updateStatus(SensorStatus.NETWORK_CONNECTED);
+                    service.devices.put(currentDevice.getBluetoothAddress(), currentDevice);
+                    service.getNetworkState().networkStatus = NetworkStatus.CONNECTED;
                 }
                 break;
             }

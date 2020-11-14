@@ -1,5 +1,12 @@
 package ra.bluetooth;
 
+import ra.common.Envelope;
+import ra.common.network.BaseClientSession;
+import ra.common.network.NetworkClientSession;
+import ra.common.network.NetworkPeer;
+import ra.common.network.NetworkStatus;
+import ra.common.route.SimpleRoute;
+
 import javax.bluetooth.BluetoothStateException;
 import javax.bluetooth.DiscoveryAgent;
 import javax.bluetooth.LocalDevice;
@@ -10,44 +17,28 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.logging.Logger;
 
-class BluetoothSession extends BaseSession {
+class BluetoothSession extends BaseClientSession {
 
-    private static final Logger LOG = Logger.getLogger(io.onemfive.network.sensors.bluetooth.BluetoothSession.class.getName());
+    private static final Logger LOG = Logger.getLogger(BluetoothSession.class.getName());
 
+    private BluetoothService service;
     private ClientSession clientSession;
     private SessionNotifier sessionNotifier;
     private RequestHandler handler;
     private Thread serverThread;
-    private boolean connected = false;
     private String remotePeerAddress;
 
-    BluetoothSession(io.onemfive.network.sensors.bluetooth.BluetoothSensor sensor) {
-        super(sensor);
+    BluetoothSession(BluetoothService service) {
+        this.service = service;
     }
 
     @Override
-    public Boolean send(NetworkPacket packet) {
-        return send((JSONSerializable)packet);
-    }
-
-    @Override
-    public boolean send(NetworkRequestOp requestOp) {
-        requestOp.start = System.currentTimeMillis();
-        waitingOps.put(requestOp.id, requestOp);
-        return send((NetworkOp)requestOp);
-    }
-
-    @Override
-    public boolean notify(NetworkNotifyOp notifyOp) {
-        return send(notifyOp);
-    }
-
-    private boolean send(JSONSerializable jsonSerializable) {
-        if(!connected) {
+    public Boolean send(Envelope envelope) {
+        if(service.getNetworkState().networkStatus != NetworkStatus.CONNECTED) {
             connect();
         }
         HeaderSet hsOperation = clientSession.createHeaderSet();
-        hsOperation.setHeader(HeaderSet.NAME, sensor.getSensorManager().getPeerManager().getLocalNode().getNetworkPeer().getId());
+        hsOperation.setHeader(HeaderSet.NAME, service.getNetworkState().localPeer.getId());
         hsOperation.setHeader(HeaderSet.TYPE, "text");
 
         //Create PUT Operation
@@ -56,7 +47,7 @@ class BluetoothSession extends BaseSession {
         try {
             putOperation = clientSession.put(hsOperation);
             os = putOperation.openOutputStream();
-            os.write(jsonSerializable.toJSON().getBytes());
+            os.write(envelope.toJSON().getBytes());
         } catch (IOException e) {
             LOG.warning(e.getLocalizedMessage());
             return false;
@@ -80,7 +71,7 @@ class BluetoothSession extends BaseSession {
     @Override
     public boolean open(String address) {
         LOG.info("Establishing session based on provided address: "+address);
-        sensor.updateStatus(SensorStatus.NETWORK_WARMUP);
+        service.getNetworkState().networkStatus = NetworkStatus.WARMUP;
         // Client
         remotePeerAddress = address;
         try {
@@ -91,8 +82,9 @@ class BluetoothSession extends BaseSession {
         }
         // Server
         if(serverThread==null || !serverThread.isAlive()) {
+            String uuid = (String)service.getNetworkState().localPeer.getDid().getPublicKey().getAttribute("uuid");
             try {
-                String url = "btgoep://localhost:"+sensor.getSensorManager().getPeerManager().getLocalNode().getNetworkPeer(Network.Bluetooth).getDid().getPublicKey().getAttribute("uuid")+";name=1M5";
+                String url = "btgoep://localhost:"+uuid+";name=1M5";
                 LOG.info("Setting up listener on: "+url);
                 sessionNotifier = (SessionNotifier) Connector.open(url);
                 handler = new RequestHandler(this);
@@ -108,7 +100,7 @@ class BluetoothSession extends BaseSession {
                 return false;
             }
             serverThread = new Thread(() -> {
-                while (getStatus() != SensorSession.Status.STOPPING) {
+                while (getStatus() != NetworkClientSession.Status.STOPPING) {
                     try {
                         sessionNotifier.acceptAndOpen(handler);
                     } catch (IOException e) {
@@ -133,23 +125,21 @@ class BluetoothSession extends BaseSession {
     @Override
     public boolean connect() {
         LOG.info("Connecting to remote bluetooth device of peer: "+remotePeerAddress);
-        sensor.updateStatus(SensorStatus.NETWORK_CONNECTING);
-        connected = false;
+        service.getNetworkState().networkStatus = NetworkStatus.CONNECTING;
         if(clientSession==null) {
             if(!open(remotePeerAddress))
                 return false;
         }
         try {
             HeaderSet hsOperation = clientSession.createHeaderSet();
-            hsOperation.setHeader(HeaderSet.NAME, sensor.getSensorManager().getPeerManager().getLocalNode().getNetworkPeer().getId());
+            hsOperation.setHeader(HeaderSet.NAME, service.getNetworkState().localPeer.getId());
             hsOperation.setHeader(HeaderSet.TYPE, "text");
             HeaderSet hsConnectReply = clientSession.connect(hsOperation);
             if (hsConnectReply.getResponseCode() != ResponseCodes.OBEX_HTTP_OK) {
                 LOG.info("Not connected.");
                 return false;
             } else {
-                connected = true;
-                sensor.updateStatus(SensorStatus.NETWORK_CONNECTED);
+                service.getNetworkState().networkStatus = NetworkStatus.CONNECTED;
             }
         } catch (IOException e) {
             LOG.warning(e.getLocalizedMessage());
@@ -163,7 +153,7 @@ class BluetoothSession extends BaseSession {
         if(clientSession!=null) {
             try {
                 clientSession.disconnect(null);
-                sensor.updateStatus(SensorStatus.NETWORK_CONNECTING);
+                service.getNetworkState().networkStatus = NetworkStatus.CONNECTING;
             } catch (IOException e) {
                 LOG.warning(e.getLocalizedMessage());
             }
@@ -173,12 +163,12 @@ class BluetoothSession extends BaseSession {
 
     @Override
     public boolean isConnected() {
-        return connected;
+        return service.getNetworkState().networkStatus == NetworkStatus.CONNECTED;
     }
 
     @Override
     public boolean close() {
-        sensor.updateStatus(SensorStatus.NETWORK_STOPPING);
+        service.getNetworkState().networkStatus = NetworkStatus.DISCONNECTED;
         if(clientSession!=null) {
             try {
                 clientSession.close();
@@ -195,16 +185,14 @@ class BluetoothSession extends BaseSession {
             }
         }
         serverThread.interrupt();
-        sensor.releaseSession(this);
-        sensor.updateStatus(SensorStatus.NETWORK_STOPPED);
         return true;
     }
 
     private static class RequestHandler extends ServerRequestHandler {
 
-        private io.onemfive.network.sensors.bluetooth.BluetoothSession session;
+        private BluetoothSession session;
 
-        private RequestHandler (io.onemfive.network.sensors.bluetooth.BluetoothSession session) {
+        private RequestHandler (BluetoothSession session) {
             this.session = session;
         }
 
@@ -214,14 +202,9 @@ class BluetoothSession extends BaseSession {
             try {
                 String id = (String)request.getHeader(HeaderSet.NAME);
                 LOG.info("id="+id);
-                NetworkPeer networkPeer = session.sensor.getSensorManager().getPeerManager().loadPeer(id);
-                if(networkPeer!=null) {
-                    LOG.info("Known peer...");
-
-                } else {
-                    LOG.info("Unknown peer...");
-
-                }
+                // TODO: Send peer to Peer Manager
+                Envelope e = Envelope.documentFactory();
+                e.setRoute(new SimpleRoute());
             } catch (IOException e) {
                 LOG.warning(e.getLocalizedMessage());
             }

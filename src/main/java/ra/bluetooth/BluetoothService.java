@@ -1,7 +1,14 @@
 package ra.bluetooth;
 
-import ra.common.Network;
-import ra.common.NetworkPeer;
+import ra.common.Envelope;
+import ra.common.network.*;
+import ra.common.route.ExternalRoute;
+import ra.common.route.Route;
+import ra.common.service.ServiceStatus;
+import ra.util.Config;
+import ra.util.SystemSettings;
+import ra.util.Wait;
+import ra.util.tasks.TaskRunner;
 
 import javax.bluetooth.BluetoothStateException;
 import javax.bluetooth.DiscoveryAgent;
@@ -18,61 +25,54 @@ import java.util.logging.Logger;
  * Bluecove licensed under GPL.
  *
  */
-public final class BluetoothSensor extends BaseSensor {
+public final class BluetoothService extends NetworkService {
 
-    private static final Logger LOG = Logger.getLogger(io.onemfive.network.sensors.bluetooth.BluetoothSensor.class.getName());
+    private static final Logger LOG = Logger.getLogger(BluetoothService.class.getName());
 
     private String bluetoothBaseDir;
     private File bluetoothDir;
 
-    public static final NetworkState config = new NetworkState();
     Map<String, RemoteDevice> devices = new HashMap<>();
     Map<String, NetworkPeer> peersInDiscovery = new HashMap<>();
 
     private CheckPowerStatus checkPowerStatus;
 
     private boolean deviceDiscoveryRunning = false;
-    private io.onemfive.network.sensors.bluetooth.BluetoothDeviceDiscovery deviceDiscovery;
-    private io.onemfive.network.sensors.bluetooth.BluetoothServiceDiscovery serviceDiscovery;
+    private BluetoothDeviceDiscovery deviceDiscovery;
+    private BluetoothServiceDiscovery serviceDiscovery;
+    private BluetoothPeerDiscovery peerDiscovery;
+    private TaskRunner taskRunner;
 
     private boolean peerDiscoveryRunning = false;
-    private NetworkPeerDiscovery peerDiscovery;
 
     private Thread taskRunnerThread;
 
     private Map<Integer, BluetoothSession> leased = new HashMap<>();
 
-    public BluetoothSensor() {
-        super(Network.Bluetooth);
-        taskRunner = new TaskRunner(1, 4);
-    }
-
-    public BluetoothSensor(SensorManager sensorManager) {
-        super(sensorManager, Network.Bluetooth);
+    public BluetoothService() {
+        super(Network.Bluetooth.name());
         taskRunner = new TaskRunner(1, 4);
     }
 
     @Override
-    public String[] getOperationEndsWith() {
-        return new String[]{".bt"};
+    public void handleDocument(Envelope envelope) {
+        super.handleDocument(envelope);
+        Route r = envelope.getRoute();
+        if(r instanceof ExternalRoute) {
+            // External request
+            ExternalRoute er = (ExternalRoute)r;
+
+        } else {
+            // Internal request
+
+        }
     }
 
-    @Override
-    public String[] getURLBeginsWith() {
-        return new String[]{"bt"};
-    }
-
-    @Override
-    public String[] getURLEndsWith() {
-        return new String[]{".bt"};
-    }
-
-    @Override
-    public SensorSession establishSession(String address, Boolean autoConnect) {
+    private NetworkClientSession establishSession(String address, Boolean autoConnect) {
         if(address==null) {
             address = "default";
         }
-        SensorSession session = sessions.get(address);
+        NetworkClientSession session = sessions.get(address);
         if(session==null) {
             if (session.open(address)) {
                 if (autoConnect) {
@@ -84,45 +84,38 @@ public final class BluetoothSensor extends BaseSensor {
         return session;
     }
 
-    public SensorSession establishSession(NetworkPeer peer, Boolean autoConnect) {
+    private NetworkClientSession establishSession(NetworkPeer peer, Boolean autoConnect) {
         return establishSession(peer.getDid().getPublicKey().getAddress(), autoConnect);
     }
 
-    @Override
-    public void updateState(NetworkState networkState) {
-        LOG.warning("Not implemented.");
-    }
-
     /**
-     * Sends UTF-8 content to a Bluetooth Peer.
-     * @param packet Envelope containing Packet as data.
-     * @return boolean was successful
+     * Sends Envelope to a Bluetooth Peer.
+     * @param envelope Envelope containing data.
+     * @return Boolean was successful
      */
     @Override
-    public boolean sendOut(NetworkPacket packet) {
+    public Boolean sendOut(Envelope envelope) {
         LOG.info("Sending Packet via Bluetooth...");
-        NetworkPeer toPeer = packet.getToPeer();
+        Route r = envelope.getRoute();
+        if(!(r instanceof ExternalRoute)) {
+            LOG.warning("Not an external route.");
+            // TODO: Reply with error code
+            return false;
+        }
+        ExternalRoute er = (ExternalRoute)r;
+        NetworkPeer toPeer = er.getDestination();
         if (toPeer == null) {
             LOG.warning("No Peer found while sending to Bluetooth.");
             return false;
         }
 
-        if (toPeer.getNetwork() != Network.Bluetooth) {
+        if (!Network.Bluetooth.name().equals(toPeer.getNetwork())) {
             LOG.warning("Not a Bluetooth Request.");
             return false;
         }
 
-        if (packet.getEnvelope() == null) {
-            LOG.warning("No Envelope found while sending to Bluetooth.");
-            return false;
-        }
-        LOG.info("Envelope to send: " + packet.getEnvelope().toString());
-        return establishSession(packet.getToPeer(), true).send(packet);
-    }
-
-    @Override
-    public boolean sendIn(Envelope envelope) {
-        return super.sendIn(envelope);
+        LOG.info("Envelope to send: " + envelope.toJSON());
+        return establishSession(toPeer, true).send(envelope);
     }
 
     public boolean startDeviceDiscovery() {
@@ -130,13 +123,13 @@ public final class BluetoothSensor extends BaseSensor {
         if(LocalDevice.isPowerOn()) {
             // TODO: Increase periodicity once a threshold of known peers is established
             // run every minute
-            deviceDiscovery = new io.onemfive.network.sensors.bluetooth.BluetoothDeviceDiscovery(this, taskRunner);
+            deviceDiscovery = new BluetoothDeviceDiscovery(this, taskRunner);
             deviceDiscovery.setPeriodicity(60 * 1000L);
             deviceDiscovery.setLongRunning(true);
             taskRunner.addTask(deviceDiscovery);
 
             // run every minute 20 seconds after device discovery
-            serviceDiscovery = new io.onemfive.network.sensors.bluetooth.BluetoothServiceDiscovery(sensorManager.getPeerManager(), this, taskRunner);
+            serviceDiscovery = new BluetoothServiceDiscovery(this, taskRunner);
             serviceDiscovery.setPeriodicity(60 * 1000L);
             serviceDiscovery.setLongRunning(true);
             serviceDiscovery.setDelayed(true);
@@ -165,7 +158,7 @@ public final class BluetoothSensor extends BaseSensor {
                 }
             }
             // run every minute 20 seconds after service discovery
-            peerDiscovery = new NetworkPeerDiscovery(taskRunner, this);
+            peerDiscovery = new BluetoothPeerDiscovery(taskRunner, this);
             peerDiscovery.setLongRunning(true);
             peerDiscovery.setDelayed(true);
             peerDiscovery.setDelayTimeMS(40 * 1000L);
@@ -186,20 +179,38 @@ public final class BluetoothSensor extends BaseSensor {
     }
 
     @Override
-    public boolean start(Properties properties) {
-        LOG.info("Starting Bluetooth Sensor...");
-        this.properties = properties;
-        updateStatus(SensorStatus.INITIALIZING);
-        bluetoothBaseDir = properties.getProperty("1m5.dir.sensors")+"/bluetooth";
-        bluetoothDir = new File(bluetoothBaseDir);
-        if (!bluetoothDir.exists()) {
-            if (!bluetoothDir.mkdir()) {
-                LOG.severe("Unable to create Bluetooth base directory: " + bluetoothBaseDir + "; exiting...");
+    public boolean start(Properties p) {
+        LOG.info("Starting Bluetooth Service...");
+        updateStatus(ServiceStatus.INITIALIZING);
+        try {
+            config = Config.loadFromClasspath("ra-bluetooth-client.config", p, false);
+        } catch (Exception e) {
+            LOG.severe(e.getLocalizedMessage());
+            return false;
+        }
+        if(System.getProperty("bluetooth.dir.base")==null) {
+            // Set up BT Directories within RA Services Directory
+            File homeDir = SystemSettings.getUserHomeDir();
+            File raDir = new File(homeDir, ".ra");
+            if(!raDir.exists() && !raDir.mkdir()) {
+                LOG.severe("Unable to create home/.ra directory.");
                 return false;
             }
+            File servicesDir = new File(raDir, "services");
+            if(!servicesDir.exists() && !servicesDir.mkdir()) {
+                LOG.severe("Unable to create services directory in home/.ra");
+                return false;
+            }
+            bluetoothDir = new File(servicesDir, BluetoothService.class.getName());
+            if(!bluetoothDir.exists() && !bluetoothDir.mkdir()) {
+                LOG.severe("Unable to create "+BluetoothService.class.getName()+" directory in home/.ra/services");
+                return false;
+            }
+            System.setProperty("bluetooth.dir.base", bluetoothDir.getAbsolutePath());
+        } else {
+            bluetoothDir = new File(System.getProperty("bluetooth.dir.base"));
         }
-        properties.setProperty("bluetooth.dir.base", bluetoothBaseDir);
-        properties.setProperty("1m5.dir.sensors.bluetooth", bluetoothBaseDir);
+        config.setProperty("bluetooth.dir.base", bluetoothBaseDir);
         // Config Directory
         String configDir = bluetoothDir + "/config";
         File configFolder = new File(configDir);
@@ -208,7 +219,7 @@ public final class BluetoothSensor extends BaseSensor {
                 LOG.warning("Unable to create Bluetooth config directory: " +configDir);
         if(configFolder.exists()) {
             System.setProperty("bluetooth.dir.config",configDir);
-            properties.setProperty("bluetooth.dir.config",configDir);
+            config.setProperty("bluetooth.dir.config",configDir);
         }
         // Router Directory
         String routerDir = bluetoothDir + "/router";
@@ -218,7 +229,7 @@ public final class BluetoothSensor extends BaseSensor {
                 LOG.warning("Unable to create Bluetooth router directory: "+routerDir);
         if(routerFolder.exists()) {
             System.setProperty("bluetooth.dir.router",routerDir);
-            properties.setProperty("bluetooth.dir.router",routerDir);
+            config.setProperty("bluetooth.dir.router",routerDir);
         }
         // PID Directory
         String pidDir = bluetoothDir + "/pid";
@@ -228,7 +239,7 @@ public final class BluetoothSensor extends BaseSensor {
                 LOG.warning("Unable to create Bluetooth PID directory: "+pidDir);
         if(pidFolder.exists()) {
             System.setProperty("bluetooth.dir.pid",pidDir);
-            properties.setProperty("bluetooth.dir.pid",pidDir);
+            config.setProperty("bluetooth.dir.pid",pidDir);
         }
         // Log Directory
         String logDir = bluetoothDir + "/log";
@@ -238,7 +249,7 @@ public final class BluetoothSensor extends BaseSensor {
                 LOG.warning("Unable to create Bluetooth log directory: "+logDir);
         if(logFolder.exists()) {
             System.setProperty("bluetooth.dir.log",logDir);
-            properties.setProperty("bluetooth.dir.log",logDir);
+            config.setProperty("bluetooth.dir.log",logDir);
         }
 
         checkPowerStatus = new CheckPowerStatus(taskRunner, this);
@@ -253,18 +264,12 @@ public final class BluetoothSensor extends BaseSensor {
     }
 
     public boolean awaken() {
-        updateStatus(SensorStatus.STARTING);
-        NetworkNode localNode = sensorManager.getPeerManager().getLocalNode();
+        getNetworkState().networkStatus = NetworkStatus.CONNECTING;
         try {
             String localAddress = LocalDevice.getLocalDevice().getBluetoothAddress();
-            localPeer = localNode.getNetworkPeer(Network.Bluetooth);
-            if (localPeer == null) {
-                localPeer = new NetworkPeer(Network.Bluetooth);
-                localNode.addNetworkPeer(localPeer);
-            }
+            NetworkPeer localPeer = getNetworkState().localPeer;
             localPeer.getDid().setUsername(LocalDevice.getLocalDevice().getFriendlyName());
             localPeer.getDid().getPublicKey().setAddress(localAddress);
-            localPeer.getDid().setPassphrase(localNode.getNetworkPeer().getDid().getPassphrase());
             if (!localAddress.equals(localPeer.getDid().getPublicKey().getAddress())
                     || localPeer.getDid().getPublicKey().getAttribute("uuid") == null) {
                 // New address or no UUID
@@ -272,16 +277,17 @@ public final class BluetoothSensor extends BaseSensor {
                 // TODO: Remove hard-coding
                 localPeer.getDid().getPublicKey().addAttribute("uuid", "11111111111111111111111111111123");
             }
-            while (localNode.getNetworkPeer().getId() == null) {
+            while (localPeer.getId() == null) {
                 Wait.aMs(100);
+                // TODO: Add a break-out to prevent permanent wait
             }
-            localPeer.setId(localNode.getNetworkPeer().getId());
-            sensorManager.getPeerManager().savePeer(localPeer, true);
-            updateModelListeners();
+            // TODO: Send Peer Manager update to Local Peer
+//            sensorManager.getPeerManager().savePeer(localPeer, true);
+            // TODO: Update Network Manager of new status
+//            updateModelListeners();
         } catch (BluetoothStateException e) {
             if (e.getLocalizedMessage().contains("Bluetooth Device is not available")) {
-                if (getStatus() != SensorStatus.NETWORK_UNAVAILABLE)
-                    updateStatus(SensorStatus.NETWORK_UNAVAILABLE);
+               getNetworkState().networkStatus = NetworkStatus.DISCONNECTED;
                 LOG.warning("Bluetooth either not installed on machine or not turned on.");
             } else {
                 LOG.warning(e.getLocalizedMessage());
@@ -289,14 +295,14 @@ public final class BluetoothSensor extends BaseSensor {
             return false;
         }
 
-        networkState.UpdateInterval = 20 * 60; // 20 minutes
-        networkState.UpdateIntervalHyper = 60; // every minute
+        getNetworkState().updateIntervalSeconds = 20 * 60; // 20 minutes
+        getNetworkState().updateIntervalHyperSeconds = 60; // every minute
 
         return startPeerDiscovery();
     }
 
     public boolean sleep() {
-        updateStatus(SensorStatus.NETWORK_UNAVAILABLE);
+        getNetworkState().networkStatus = NetworkStatus.DISCONNECTED;
         stopPeerDiscovery();
         stopDeviceDiscovery();
         return true;
@@ -320,7 +326,7 @@ public final class BluetoothSensor extends BaseSensor {
     @Override
     public boolean shutdown() {
         super.shutdown();
-        updateStatus(SensorStatus.SHUTTING_DOWN);
+        updateStatus(ServiceStatus.SHUTTING_DOWN);
         try {
             if(LocalDevice.getLocalDevice().getDiscoverable() != DiscoveryAgent.NOT_DISCOVERABLE)
                 LocalDevice.getLocalDevice().setDiscoverable(DiscoveryAgent.NOT_DISCOVERABLE);
@@ -332,14 +338,14 @@ public final class BluetoothSensor extends BaseSensor {
         taskRunner.removeTask(serviceDiscovery, true);
         taskRunner.removeTask(deviceDiscovery, true);
         taskRunner = null;
-        updateStatus(SensorStatus.SHUTDOWN);
+        updateStatus(ServiceStatus.SHUTDOWN);
         return true;
     }
 
     @Override
     public boolean gracefulShutdown() {
         super.gracefulShutdown();
-        updateStatus(SensorStatus.GRACEFULLY_SHUTTING_DOWN);
+        updateStatus(ServiceStatus.GRACEFULLY_SHUTTING_DOWN);
         try {
             if(LocalDevice.getLocalDevice().getDiscoverable() != DiscoveryAgent.NOT_DISCOVERABLE)
                 LocalDevice.getLocalDevice().setDiscoverable(DiscoveryAgent.NOT_DISCOVERABLE);
@@ -351,7 +357,7 @@ public final class BluetoothSensor extends BaseSensor {
         taskRunner.removeTask(serviceDiscovery, false);
         taskRunner.removeTask(deviceDiscovery, false);
         taskRunner = null;
-        updateStatus(SensorStatus.GRACEFULLY_SHUTDOWN);
+        updateStatus(ServiceStatus.GRACEFULLY_SHUTDOWN);
         return true;
     }
 

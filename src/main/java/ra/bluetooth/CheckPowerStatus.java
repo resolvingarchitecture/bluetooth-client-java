@@ -1,23 +1,28 @@
 package ra.bluetooth;
 
+import ra.util.tasks.BaseTask;
+import ra.util.tasks.TaskRunner;
+
 import javax.bluetooth.LocalDevice;
 
-public class CheckPowerStatus extends NetworkTask {
+public final class CheckPowerStatus extends BaseTask {
 
+    private final BluetoothService service;
     private boolean powerOn = false;
 
-    public CheckPowerStatus(TaskRunner taskRunner, io.onemfive.network.sensors.bluetooth.BluetoothSensor sensor) {
-        super(io.onemfive.network.sensors.bluetooth.CheckPowerStatus.class.getName(), taskRunner, sensor);
+    public CheckPowerStatus(TaskRunner taskRunner, BluetoothService service) {
+        super(CheckPowerStatus.class.getSimpleName(), taskRunner);
+        this.service = service;
     }
 
     @Override
     public Boolean execute() {
         if(!powerOn && LocalDevice.isPowerOn()) {
             powerOn = true;
-            ((io.onemfive.network.sensors.bluetooth.BluetoothSensor)sensor).awaken();
+            service.awaken();
         } else {
             powerOn = false;
-            ((io.onemfive.network.sensors.bluetooth.BluetoothSensor)sensor).sleep();
+            service.sleep();
         }
         return true;
     }
