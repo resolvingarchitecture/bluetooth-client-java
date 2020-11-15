@@ -1,5 +1,10 @@
 # Bluetooth
-Slated for 1M5 0.8.3
+Client to local Bluetooth radio.
+
+## Features
+* Device Discovery - uses local radio to search for other Bluetooth devices within range.
+* Service Discovery - requests service information from each discovered device.
+* Peer Discovery - requests peer information from discovered devices if they have this Bluetooth client installed.
 
 ## Install BlueCove
 
