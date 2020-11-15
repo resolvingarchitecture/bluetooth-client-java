@@ -40,27 +40,29 @@ public class BluetoothServiceDiscovery extends BaseTask implements DiscoveryList
 //        UUID obexFileXfer = ServiceClasses.getUUID(ServiceClasses.OBEX_FILE_TRANSFER);
 
         UUID[] searchUuidSet = new UUID[] { obexObjPush };
-//        UUID[] searchUuidSet = new UUID[] { obexObjPush, obexFileXfer, oneMFiveEnvPush, oneMFiveBinXfer };
+//        UUID[] searchUuidSet = new UUID[] { obexObjPush, obexFileXfer };
 
         int[] attrIDs =  new int[] {
                 0x0100 // Service name
         };
         LOG.info(service.devices.size()+" devices to search services on...");
-        for(RemoteDevice device : service.devices.values()) {
-            try {
-                synchronized (serviceSearchCompletedEvent) {
-                    currentDevice = device;
-                    currentPeer = new NetworkPeer(Network.Bluetooth.name());
-                    currentPeer.getDid().setUsername(device.getFriendlyName(true));
-                    currentPeer.getDid().getPublicKey().setAddress(device.getBluetoothAddress());
-                    LOG.info("Searching services on " + currentPeer.getDid().getUsername() + " address=" + currentPeer.getDid().getPublicKey().getAddress());
-                    LocalDevice.getLocalDevice().getDiscoveryAgent().searchServices(attrIDs, searchUuidSet, device, this);
-                    serviceSearchCompletedEvent.wait();
+        synchronized (service.devices) {
+            for (RemoteDevice device : service.devices.values()) {
+                try {
+                    synchronized (serviceSearchCompletedEvent) {
+                        currentDevice = device;
+                        currentPeer = new NetworkPeer(Network.Bluetooth.name());
+                        currentPeer.getDid().setUsername(device.getFriendlyName(true));
+                        currentPeer.getDid().getPublicKey().setAddress(device.getBluetoothAddress());
+                        LOG.info("Searching services on " + currentPeer.getDid().getUsername() + " address=" + currentPeer.getDid().getPublicKey().getAddress());
+                        LocalDevice.getLocalDevice().getDiscoveryAgent().searchServices(attrIDs, searchUuidSet, device, this);
+                        serviceSearchCompletedEvent.wait();
+                    }
+                } catch (IOException e) {
+                    LOG.warning(e.getLocalizedMessage());
+                } catch (InterruptedException e) {
+                    LOG.warning(e.getLocalizedMessage());
                 }
-            } catch (IOException e) {
-                LOG.warning(e.getLocalizedMessage());
-            } catch (InterruptedException e) {
-                LOG.warning(e.getLocalizedMessage());
             }
         }
         lastCompletionTime = System.currentTimeMillis();
@@ -100,7 +102,7 @@ public class BluetoothServiceDiscovery extends BaseTask implements DiscoveryList
 
             DataElement id = serviceRecords[i].getAttributeValue(0x5555);
             if(id != null) {
-                LOG.info("1M5 id found: "+id);
+                LOG.info("RA id found: "+id);
                 currentPeer.setId((String)id.getValue());
                 service.peersInDiscovery.put(currentPeer.getId(), currentPeer);
             }

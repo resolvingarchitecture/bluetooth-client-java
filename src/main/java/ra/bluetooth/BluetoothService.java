@@ -1,6 +1,8 @@
 package ra.bluetooth;
 
+import ra.common.Client;
 import ra.common.Envelope;
+import ra.common.messaging.MessageProducer;
 import ra.common.network.*;
 import ra.common.route.ExternalRoute;
 import ra.common.route.Route;
@@ -15,14 +17,19 @@ import javax.bluetooth.DiscoveryAgent;
 import javax.bluetooth.LocalDevice;
 import javax.bluetooth.RemoteDevice;
 import java.io.File;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Logger;
 
 /**
- * Integration with JSR-82 implementation BlueCove (http://www.bluecove.org).
- * Bluecove licensed under GPL.
+ * Bluetooth Service
+ *
+ * Connects with local Bluetooth radio via the JSR-82 implementation BlueCove (http://www.bluecove.org).
+ * This services uses the Bluecove GPL version for Linux using BlueZ.
+ *
+ *
  *
  */
 public final class BluetoothService extends NetworkService {
@@ -32,15 +39,15 @@ public final class BluetoothService extends NetworkService {
     private String bluetoothBaseDir;
     private File bluetoothDir;
 
-    Map<String, RemoteDevice> devices = new HashMap<>();
-    Map<String, NetworkPeer> peersInDiscovery = new HashMap<>();
+    final Map<String, RemoteDevice> devices = new HashMap<>();
+    final Map<String, NetworkPeer> peersInDiscovery = new HashMap<>();
 
     private CheckPowerStatus checkPowerStatus;
 
     private boolean deviceDiscoveryRunning = false;
     private BluetoothDeviceDiscovery deviceDiscovery;
     private BluetoothServiceDiscovery serviceDiscovery;
-    private BluetoothPeerDiscovery peerDiscovery;
+    private BluetoothDeviceDiscovery peerDiscovery;
     private TaskRunner taskRunner;
 
     private boolean peerDiscoveryRunning = false;
@@ -122,18 +129,7 @@ public final class BluetoothService extends NetworkService {
         LOG.info("Is Bluetooth Radio On: "+LocalDevice.isPowerOn());
         if(LocalDevice.isPowerOn()) {
             // TODO: Increase periodicity once a threshold of known peers is established
-            // run every minute
-            deviceDiscovery = new BluetoothDeviceDiscovery(this, taskRunner);
-            deviceDiscovery.setPeriodicity(60 * 1000L);
-            deviceDiscovery.setLongRunning(true);
             taskRunner.addTask(deviceDiscovery);
-
-            // run every minute 20 seconds after device discovery
-            serviceDiscovery = new BluetoothServiceDiscovery(this, taskRunner);
-            serviceDiscovery.setPeriodicity(60 * 1000L);
-            serviceDiscovery.setLongRunning(true);
-            serviceDiscovery.setDelayed(true);
-            serviceDiscovery.setDelayTimeMS(20 * 1000L);
             taskRunner.addTask(serviceDiscovery);
             deviceDiscoveryRunning = true;
             return true;
@@ -150,18 +146,13 @@ public final class BluetoothService extends NetworkService {
 
     private boolean startPeerDiscovery() {
         LOG.info("Starting Bluetooth Peer Discovery...");
+        RemoteDevice[] remoteDevices = null;
+        long timeoutMs = 3L * 60L * 1000L; // 3 minutes to wait for devices to show up
+        long startTime = new Date().getTime();
         try {
-            RemoteDevice[] remoteDevices = LocalDevice.getLocalDevice().getDiscoveryAgent().retrieveDevices(DiscoveryAgent.CACHED);
-            if(remoteDevices != null && remoteDevices.length > 0) {
-                for(RemoteDevice r : remoteDevices) {
-                    devices.put(r.getBluetoothAddress(), r);
-                }
-            }
-            // run every minute 20 seconds after service discovery
-            peerDiscovery = new BluetoothPeerDiscovery(taskRunner, this);
-            peerDiscovery.setLongRunning(true);
-            peerDiscovery.setDelayed(true);
-            peerDiscovery.setDelayTimeMS(40 * 1000L);
+            do {
+                remoteDevices = LocalDevice.getLocalDevice().getDiscoveryAgent().retrieveDevices(DiscoveryAgent.CACHED);
+            } while ((remoteDevices == null || remoteDevices.length == 0) && new Date().getTime() < (startTime + timeoutMs));
 //            taskRunner.addTask(peerDiscovery);
             peerDiscoveryRunning = true;
             LOG.info("Completed Bluetooth Peer Discovery.");
@@ -210,48 +201,47 @@ public final class BluetoothService extends NetworkService {
         } else {
             bluetoothDir = new File(System.getProperty("bluetooth.dir.base"));
         }
+        bluetoothBaseDir = bluetoothDir.getAbsolutePath();
         config.setProperty("bluetooth.dir.base", bluetoothBaseDir);
         // Config Directory
-        String configDir = bluetoothDir + "/config";
-        File configFolder = new File(configDir);
+        File configFolder = new File(bluetoothDir, "config");
         if(!configFolder.exists())
             if(!configFolder.mkdir())
-                LOG.warning("Unable to create Bluetooth config directory: " +configDir);
+                LOG.warning("Unable to create Bluetooth config directory: " +bluetoothBaseDir+"/config");
         if(configFolder.exists()) {
-            System.setProperty("bluetooth.dir.config",configDir);
-            config.setProperty("bluetooth.dir.config",configDir);
-        }
-        // Router Directory
-        String routerDir = bluetoothDir + "/router";
-        File routerFolder = new File(routerDir);
-        if(!routerFolder.exists())
-            if(!routerFolder.mkdir())
-                LOG.warning("Unable to create Bluetooth router directory: "+routerDir);
-        if(routerFolder.exists()) {
-            System.setProperty("bluetooth.dir.router",routerDir);
-            config.setProperty("bluetooth.dir.router",routerDir);
-        }
-        // PID Directory
-        String pidDir = bluetoothDir + "/pid";
-        File pidFolder = new File(pidDir);
-        if(!pidFolder.exists())
-            if(!pidFolder.mkdir())
-                LOG.warning("Unable to create Bluetooth PID directory: "+pidDir);
-        if(pidFolder.exists()) {
-            System.setProperty("bluetooth.dir.pid",pidDir);
-            config.setProperty("bluetooth.dir.pid",pidDir);
+            System.setProperty("bluetooth.dir.config",configFolder.getAbsolutePath());
+            config.setProperty("bluetooth.dir.config",configFolder.getAbsolutePath());
         }
         // Log Directory
-        String logDir = bluetoothDir + "/log";
-        File logFolder = new File(logDir);
+        File logFolder = new File(bluetoothDir, "log");
         if(!logFolder.exists())
             if(!logFolder.mkdir())
-                LOG.warning("Unable to create Bluetooth log directory: "+logDir);
+                LOG.warning("Unable to create Bluetooth log directory: "+bluetoothBaseDir+"/log");
         if(logFolder.exists()) {
-            System.setProperty("bluetooth.dir.log",logDir);
-            config.setProperty("bluetooth.dir.log",logDir);
+            System.setProperty("bluetooth.dir.log",logFolder.getAbsolutePath());
+            config.setProperty("bluetooth.dir.log",logFolder.getAbsolutePath());
         }
 
+        // run every minute
+        deviceDiscovery = new BluetoothDeviceDiscovery(this, taskRunner);
+        deviceDiscovery.setPeriodicity(60 * 1000L);
+        deviceDiscovery.setLongRunning(true);
+
+        // run every minute 20 seconds after device discovery
+        serviceDiscovery = new BluetoothServiceDiscovery(this, taskRunner);
+        serviceDiscovery.setPeriodicity(60 * 1000L);
+        serviceDiscovery.setLongRunning(true);
+        serviceDiscovery.setDelayed(true);
+        serviceDiscovery.setDelayTimeMS(20 * 1000L);
+
+        // run every minute 20 seconds after service discovery
+        peerDiscovery = new BluetoothDeviceDiscovery(this, taskRunner);
+        peerDiscovery.setPeriodicity(60 * 1000L);
+        peerDiscovery.setLongRunning(true);
+        peerDiscovery.setDelayed(true);
+        peerDiscovery.setDelayTimeMS(20 * 1000L);
+
+        // run every 3 seconds
         checkPowerStatus = new CheckPowerStatus(taskRunner, this);
         checkPowerStatus.setPeriodicity(3 * 1000);
         taskRunner.addTask(checkPowerStatus);
@@ -264,6 +254,7 @@ public final class BluetoothService extends NetworkService {
     }
 
     public boolean awaken() {
+        LOG.info("Bluetooth Network awakening...");
         getNetworkState().networkStatus = NetworkStatus.CONNECTING;
         try {
             String localAddress = LocalDevice.getLocalDevice().getBluetoothAddress();
@@ -277,10 +268,10 @@ public final class BluetoothService extends NetworkService {
                 // TODO: Remove hard-coding
                 localPeer.getDid().getPublicKey().addAttribute("uuid", "11111111111111111111111111111123");
             }
-            while (localPeer.getId() == null) {
-                Wait.aMs(100);
+//            while (localPeer.getId() == null) {
+//                Wait.aMs(100);
                 // TODO: Add a break-out to prevent permanent wait
-            }
+//            }
             // TODO: Send Peer Manager update to Local Peer
 //            sensorManager.getPeerManager().savePeer(localPeer, true);
             // TODO: Update Network Manager of new status
@@ -302,6 +293,7 @@ public final class BluetoothService extends NetworkService {
     }
 
     public boolean sleep() {
+        LOG.info("Bluetooth Network sleeping...");
         getNetworkState().networkStatus = NetworkStatus.DISCONNECTED;
         stopPeerDiscovery();
         stopDeviceDiscovery();
@@ -325,6 +317,7 @@ public final class BluetoothService extends NetworkService {
 
     @Override
     public boolean shutdown() {
+        LOG.info("Shutting down Bluetooth Service...");
         super.shutdown();
         updateStatus(ServiceStatus.SHUTTING_DOWN);
         try {
@@ -338,12 +331,14 @@ public final class BluetoothService extends NetworkService {
         taskRunner.removeTask(serviceDiscovery, true);
         taskRunner.removeTask(deviceDiscovery, true);
         taskRunner = null;
-        updateStatus(ServiceStatus.SHUTDOWN);
+        LOG.info("Bluetooth Service shutdown.");
+        updateStatus(ServiceStatus.SHUTDOWN);;
         return true;
     }
 
     @Override
     public boolean gracefulShutdown() {
+        LOG.info("Gracefully shutting down Bluetooth Service...");
         super.gracefulShutdown();
         updateStatus(ServiceStatus.GRACEFULLY_SHUTTING_DOWN);
         try {
@@ -357,8 +352,30 @@ public final class BluetoothService extends NetworkService {
         taskRunner.removeTask(serviceDiscovery, false);
         taskRunner.removeTask(deviceDiscovery, false);
         taskRunner = null;
+        LOG.info("Bluetooth Service gracefully shutdown.");
         updateStatus(ServiceStatus.GRACEFULLY_SHUTDOWN);
         return true;
+    }
+
+    public static void main(String[] args) {
+        BluetoothService service = new BluetoothService();
+        service.producer = new MessageProducer() {
+            @Override
+            public boolean send(Envelope envelope) {
+                LOG.info("Sending: \n\t"+envelope.toJSON());
+                return true;
+            }
+
+            @Override
+            public boolean send(Envelope envelope, Client client) {
+                LOG.info("Sending with Client waiting: \n\t"+envelope.toJSON());
+                return  true;
+            }
+        };
+        service.start(new Properties());
+        while(service.getServiceStatus() != ServiceStatus.SHUTDOWN || service.getServiceStatus() != ServiceStatus.GRACEFULLY_SHUTDOWN) {
+            Wait.aSec(1);
+        }
     }
 
 }
