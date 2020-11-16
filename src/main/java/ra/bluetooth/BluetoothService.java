@@ -6,6 +6,7 @@ import ra.common.messaging.MessageProducer;
 import ra.common.network.*;
 import ra.common.route.ExternalRoute;
 import ra.common.route.Route;
+import ra.common.route.SimpleRoute;
 import ra.common.service.ServiceStatus;
 import ra.util.Config;
 import ra.util.SystemSettings;
@@ -36,6 +37,9 @@ public final class BluetoothService extends NetworkService {
 
     private static final Logger LOG = Logger.getLogger(BluetoothService.class.getName());
 
+    public static final String OPERATION_SEND = "SEND";
+
+
     private String bluetoothBaseDir;
     private File bluetoothDir;
 
@@ -44,13 +48,9 @@ public final class BluetoothService extends NetworkService {
 
     private CheckPowerStatus checkPowerStatus;
 
-    private boolean deviceDiscoveryRunning = false;
-    private BluetoothDeviceDiscovery deviceDiscovery;
-    private BluetoothServiceDiscovery serviceDiscovery;
-    private BluetoothDeviceDiscovery peerDiscovery;
+    private boolean discoveryRunning = false;
+    private BluetoothDeviceDiscovery discovery;
     private TaskRunner taskRunner;
-
-    private boolean peerDiscoveryRunning = false;
 
     private Thread taskRunnerThread;
 
@@ -67,11 +67,15 @@ public final class BluetoothService extends NetworkService {
         Route r = envelope.getRoute();
         if(r instanceof ExternalRoute) {
             // External request
-            ExternalRoute er = (ExternalRoute)r;
-
-        } else {
+            if(!sendOut(envelope)) {
+                envelope.addErrorMessage("Bluetooth Send Out Failed");
+                send(envelope);
+            }
+        } else if(r instanceof SimpleRoute) {
             // Internal request
+            switch (r.getOperation()) {
 
+            }
         }
     }
 
@@ -125,47 +129,19 @@ public final class BluetoothService extends NetworkService {
         return establishSession(toPeer, true).send(envelope);
     }
 
-    public boolean startDeviceDiscovery() {
+    public boolean startDiscovery() {
         LOG.info("Is Bluetooth Radio On: "+LocalDevice.isPowerOn());
         if(LocalDevice.isPowerOn()) {
-            // TODO: Increase periodicity once a threshold of known peers is established
-            taskRunner.addTask(deviceDiscovery);
-            taskRunner.addTask(serviceDiscovery);
-            deviceDiscoveryRunning = true;
+            taskRunner.addTask(discovery);
+            discoveryRunning = true;
             return true;
         }
         return false;
     }
 
-    public boolean stopDeviceDiscovery() {
-        taskRunner.removeTask(deviceDiscovery, true);
-        taskRunner.removeTask(serviceDiscovery, true);
-        deviceDiscoveryRunning = false;
-        return true;
-    }
-
-    private boolean startPeerDiscovery() {
-        LOG.info("Starting Bluetooth Peer Discovery...");
-        RemoteDevice[] remoteDevices = null;
-        long timeoutMs = 3L * 60L * 1000L; // 3 minutes to wait for devices to show up
-        long startTime = new Date().getTime();
-        try {
-            do {
-                remoteDevices = LocalDevice.getLocalDevice().getDiscoveryAgent().retrieveDevices(DiscoveryAgent.CACHED);
-            } while ((remoteDevices == null || remoteDevices.length == 0) && new Date().getTime() < (startTime + timeoutMs));
-//            taskRunner.addTask(peerDiscovery);
-            peerDiscoveryRunning = true;
-            LOG.info("Completed Bluetooth Peer Discovery.");
-            return true;
-        } catch (BluetoothStateException e) {
-            LOG.warning(e.getLocalizedMessage());
-            return false;
-        }
-    }
-
-    private boolean stopPeerDiscovery() {
-        taskRunner.removeTask(peerDiscovery, true);
-        peerDiscoveryRunning = false;
+    public boolean stopDiscovery() {
+        taskRunner.removeTask(discovery, true);
+        discoveryRunning = false;
         return true;
     }
 
@@ -223,23 +199,9 @@ public final class BluetoothService extends NetworkService {
         }
 
         // run every minute
-        deviceDiscovery = new BluetoothDeviceDiscovery(this, taskRunner);
-        deviceDiscovery.setPeriodicity(60 * 1000L);
-        deviceDiscovery.setLongRunning(true);
-
-        // run every minute 20 seconds after device discovery
-        serviceDiscovery = new BluetoothServiceDiscovery(this, taskRunner);
-        serviceDiscovery.setPeriodicity(60 * 1000L);
-        serviceDiscovery.setLongRunning(true);
-        serviceDiscovery.setDelayed(true);
-        serviceDiscovery.setDelayTimeMS(20 * 1000L);
-
-        // run every minute 20 seconds after service discovery
-        peerDiscovery = new BluetoothDeviceDiscovery(this, taskRunner);
-        peerDiscovery.setPeriodicity(60 * 1000L);
-        peerDiscovery.setLongRunning(true);
-        peerDiscovery.setDelayed(true);
-        peerDiscovery.setDelayTimeMS(20 * 1000L);
+        discovery = new BluetoothDeviceDiscovery(this, taskRunner);
+        discovery.setPeriodicity(60 * 1000L);
+        discovery.setLongRunning(true);
 
         // run every 3 seconds
         checkPowerStatus = new CheckPowerStatus(taskRunner, this);
@@ -253,7 +215,15 @@ public final class BluetoothService extends NetworkService {
         return true;
     }
 
-    public boolean awaken() {
+    @Override
+    public boolean pause() {
+        LOG.info("Bluetooth Network sleeping...");
+        stopDiscovery();
+        return true;
+    }
+
+    @Override
+    public boolean unpause() {
         LOG.info("Bluetooth Network awakening...");
         getNetworkState().networkStatus = NetworkStatus.CONNECTING;
         try {
@@ -270,7 +240,7 @@ public final class BluetoothService extends NetworkService {
             }
 //            while (localPeer.getId() == null) {
 //                Wait.aMs(100);
-                // TODO: Add a break-out to prevent permanent wait
+            // TODO: Add a break-out to prevent permanent wait
 //            }
             // TODO: Send Peer Manager update to Local Peer
 //            sensorManager.getPeerManager().savePeer(localPeer, true);
@@ -278,7 +248,7 @@ public final class BluetoothService extends NetworkService {
 //            updateModelListeners();
         } catch (BluetoothStateException e) {
             if (e.getLocalizedMessage().contains("Bluetooth Device is not available")) {
-               getNetworkState().networkStatus = NetworkStatus.DISCONNECTED;
+                getNetworkState().networkStatus = NetworkStatus.DISCONNECTED;
                 LOG.warning("Bluetooth either not installed on machine or not turned on.");
             } else {
                 LOG.warning(e.getLocalizedMessage());
@@ -289,30 +259,12 @@ public final class BluetoothService extends NetworkService {
         getNetworkState().updateIntervalSeconds = 20 * 60; // 20 minutes
         getNetworkState().updateIntervalHyperSeconds = 60; // every minute
 
-        return startPeerDiscovery();
-    }
-
-    public boolean sleep() {
-        LOG.info("Bluetooth Network sleeping...");
-        getNetworkState().networkStatus = NetworkStatus.DISCONNECTED;
-        stopPeerDiscovery();
-        stopDeviceDiscovery();
-        return true;
-    }
-
-    @Override
-    public boolean pause() {
-        return false;
-    }
-
-    @Override
-    public boolean unpause() {
-        return false;
+        return startDiscovery();
     }
 
     @Override
     public boolean restart() {
-        return false;
+        return gracefulShutdown() && start(config);
     }
 
     @Override
@@ -327,9 +279,6 @@ public final class BluetoothService extends NetworkService {
             LOG.warning(e.getLocalizedMessage());
         }
         taskRunner.removeTask(checkPowerStatus, true);
-        taskRunner.removeTask(peerDiscovery, true);
-        taskRunner.removeTask(serviceDiscovery, true);
-        taskRunner.removeTask(deviceDiscovery, true);
         taskRunner = null;
         LOG.info("Bluetooth Service shutdown.");
         updateStatus(ServiceStatus.SHUTDOWN);;
@@ -348,9 +297,6 @@ public final class BluetoothService extends NetworkService {
             LOG.warning(e.getLocalizedMessage());
         }
         taskRunner.removeTask(checkPowerStatus, false);
-        taskRunner.removeTask(peerDiscovery, false);
-        taskRunner.removeTask(serviceDiscovery, false);
-        taskRunner.removeTask(deviceDiscovery, false);
         taskRunner = null;
         LOG.info("Bluetooth Service gracefully shutdown.");
         updateStatus(ServiceStatus.GRACEFULLY_SHUTDOWN);
