@@ -22,12 +22,12 @@ public final class CheckPowerStatus extends BaseTask {
     public Boolean execute() {
         if(!powerOn && LocalDevice.isPowerOn()) {
             powerOn = true;
-            LOG.info("Bluetooth Radio is On.");
-            service.awaken();
-        } else {
+            LOG.info("Bluetooth Radio was turned On.");
+            service.unpause();
+        } else if (powerOn && !LocalDevice.isPowerOn()) {
             powerOn = false;
-            LOG.info("Bluetooth Radio is Off.");
-            service.sleep();
+            LOG.info("Bluetooth Radio was turned Off.");
+            service.pause();
         }
         return true;
     }
