@@ -64,6 +64,11 @@ public class BluetoothDeviceDiscovery extends BaseTask implements DiscoveryListe
         return true;
     }
 
+    /**
+     * Inbound separate thread from Bluecove Bluez from starting inquiry in above execute()
+     * @param remoteDevice
+     * @param deviceClass
+     */
     @Override
     public void deviceDiscovered(RemoteDevice remoteDevice, DeviceClass deviceClass) {
         String msg = "Device " + remoteDevice.getBluetoothAddress() + " discovered.";
@@ -81,9 +86,11 @@ public class BluetoothDeviceDiscovery extends BaseTask implements DiscoveryListe
                 pk.addAttribute("serviceClasses", deviceClass.getServiceClasses());
                 service.devices.put(remoteDevice.getBluetoothAddress(), remoteDevice);
             } else {
+                // TODO: Update peer
 
             }
             service.getNetworkState().networkStatus = NetworkStatus.CONNECTED;
+
             // Now request its services
             UUID obexObjPush = ServiceClasses.getUUID(ServiceClasses.OBEX_OBJECT_PUSH);
 //        if ((properties != null) && (properties.size() > 0)) {
@@ -104,7 +111,7 @@ public class BluetoothDeviceDiscovery extends BaseTask implements DiscoveryListe
             LOG.info("Searching services on " + peer.getDid().getUsername() + " address=" + peer.getDid().getPublicKey().getAddress());
             LocalDevice.getLocalDevice()
                     .getDiscoveryAgent()
-                    .searchServices(attrIDs, searchUuidSet, remoteDevice, new BluetoothPeerDiscovery(service, remoteDevice, peer));
+                    .searchServices(attrIDs, searchUuidSet, remoteDevice, new BluetoothServiceDiscovery(service, remoteDevice, peer));
 
             lastCompletionTime = System.currentTimeMillis();
 

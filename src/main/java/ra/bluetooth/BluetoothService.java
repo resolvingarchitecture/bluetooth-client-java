@@ -198,9 +198,9 @@ public final class BluetoothService extends NetworkService {
             config.setProperty("bluetooth.dir.log",logFolder.getAbsolutePath());
         }
 
-        // run every minute
+        // run every 5 minutes for now - may want to lower going into production
         discovery = new BluetoothDeviceDiscovery(this, taskRunner);
-        discovery.setPeriodicity(60 * 1000L);
+        discovery.setPeriodicity(5 * 60 * 1000L);
         discovery.setLongRunning(true);
 
         // run every 3 seconds
