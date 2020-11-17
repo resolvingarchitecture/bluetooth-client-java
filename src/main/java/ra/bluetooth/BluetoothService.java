@@ -8,6 +8,7 @@ import ra.common.route.ExternalRoute;
 import ra.common.route.Route;
 import ra.common.route.SimpleRoute;
 import ra.common.service.ServiceStatus;
+import ra.common.service.ServiceStatusObserver;
 import ra.util.Config;
 import ra.util.SystemSettings;
 import ra.util.Wait;
@@ -56,8 +57,8 @@ public final class BluetoothService extends NetworkService {
 
     private Map<Integer, BluetoothSession> leased = new HashMap<>();
 
-    public BluetoothService() {
-        super(Network.Bluetooth.name());
+    public BluetoothService(MessageProducer producer, ServiceStatusObserver observer) {
+        super(Network.Bluetooth.name(), producer, observer);
         taskRunner = new TaskRunner(1, 4);
     }
 
@@ -304,8 +305,7 @@ public final class BluetoothService extends NetworkService {
     }
 
     public static void main(String[] args) {
-        BluetoothService service = new BluetoothService();
-        service.producer = new MessageProducer() {
+        BluetoothService service = new BluetoothService(new MessageProducer() {
             @Override
             public boolean send(Envelope envelope) {
                 LOG.info("Sending: \n\t"+envelope.toJSON());
@@ -316,8 +316,7 @@ public final class BluetoothService extends NetworkService {
             public boolean send(Envelope envelope, Client client) {
                 LOG.info("Sending with Client waiting: \n\t"+envelope.toJSON());
                 return  true;
-            }
-        };
+            }}, null);
         service.start(new Properties());
         while(service.getServiceStatus() != ServiceStatus.SHUTDOWN || service.getServiceStatus() != ServiceStatus.GRACEFULLY_SHUTDOWN) {
             Wait.aSec(1);
