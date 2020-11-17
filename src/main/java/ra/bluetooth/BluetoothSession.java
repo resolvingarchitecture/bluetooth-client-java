@@ -251,33 +251,33 @@ class BluetoothSession extends BaseClientSession {
             }
         }
 
-//        @Override
-//        public int onGet(Operation op) {
-//            LOG.info("Received Get Operation: "+op.toString());
-//            try {
-//                HeaderSet hs = op.getReceivedHeaders();
-//                String name = (String) hs.getHeader(HeaderSet.NAME);
-//                if (name != null) {
-//                    LOG.info("get name: " + name);
-//                }
-//
-//                InputStream is = op.openInputStream();
-//
-//                StringBuffer buf = new StringBuffer();
-//                int data;
-//                while ((data = is.read()) != -1) {
-//                    buf.append((char) data);
-//                }
-//
-//                LOG.info("got:" + buf.toString());
-//
-//                op.close();
-//                return ResponseCodes.OBEX_HTTP_OK;
-//            } catch (IOException e) {
-//                LOG.warning(e.getLocalizedMessage());
-//                return ResponseCodes.OBEX_HTTP_UNAVAILABLE;
-//            }
-//        }
+        @Override
+        public int onGet(Operation op) {
+            LOG.info("Received Get Operation: "+op.toString());
+            try {
+                HeaderSet hs = op.getReceivedHeaders();
+                String name = (String) hs.getHeader(HeaderSet.NAME);
+                if (name != null) {
+                    LOG.info("get name: " + name);
+                }
+
+                InputStream is = op.openInputStream();
+
+                StringBuffer buf = new StringBuffer();
+                int data;
+                while ((data = is.read()) != -1) {
+                    buf.append((char) data);
+                }
+
+                LOG.info("got:" + buf.toString());
+
+                op.close();
+                return ResponseCodes.OBEX_HTTP_OK;
+            } catch (IOException e) {
+                LOG.warning(e.getLocalizedMessage());
+                return ResponseCodes.OBEX_HTTP_UNAVAILABLE;
+            }
+        }
 
 //        @Override
 //        public int onDelete(HeaderSet request, HeaderSet reply) {
