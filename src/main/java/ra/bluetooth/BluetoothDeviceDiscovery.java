@@ -111,7 +111,7 @@ public class BluetoothDeviceDiscovery extends BaseTask implements DiscoveryListe
             LOG.info("Searching services on " + peer.getDid().getUsername() + " address=" + peer.getDid().getPublicKey().getAddress());
             LocalDevice.getLocalDevice()
                     .getDiscoveryAgent()
-                    .searchServices(attrIDs, searchUuidSet, remoteDevice, new BluetoothServiceDiscovery(service, remoteDevice, peer));
+                    .searchServices(attrIDs, searchUuidSet, remoteDevice, new BluetoothPeerDiscovery(service, remoteDevice, peer));
 
             lastCompletionTime = System.currentTimeMillis();
 
