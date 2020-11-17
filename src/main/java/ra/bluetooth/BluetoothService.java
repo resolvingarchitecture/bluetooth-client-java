@@ -19,7 +19,6 @@ import javax.bluetooth.DiscoveryAgent;
 import javax.bluetooth.LocalDevice;
 import javax.bluetooth.RemoteDevice;
 import java.io.File;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -50,7 +49,8 @@ public final class BluetoothService extends NetworkService {
     private CheckPowerStatus checkPowerStatus;
 
     private boolean discoveryRunning = false;
-    private BluetoothDeviceDiscovery discovery;
+    private BluetoothDeviceDiscovery deviceDiscovery;
+    private BluetoothPeerDiscovery peerDiscovery;
     private TaskRunner taskRunner;
 
     private Thread taskRunnerThread;
@@ -133,7 +133,7 @@ public final class BluetoothService extends NetworkService {
     public boolean startDiscovery() {
         LOG.info("Is Bluetooth Radio On: "+LocalDevice.isPowerOn());
         if(LocalDevice.isPowerOn()) {
-            taskRunner.addTask(discovery);
+            taskRunner.addTask(deviceDiscovery);
             discoveryRunning = true;
             return true;
         }
@@ -141,7 +141,7 @@ public final class BluetoothService extends NetworkService {
     }
 
     public boolean stopDiscovery() {
-        taskRunner.removeTask(discovery, true);
+        taskRunner.removeTask(deviceDiscovery, true);
         discoveryRunning = false;
         return true;
     }
@@ -200,9 +200,11 @@ public final class BluetoothService extends NetworkService {
         }
 
         // run every 5 minutes for now - may want to lower going into production
-        discovery = new BluetoothDeviceDiscovery(this, taskRunner);
-        discovery.setPeriodicity(5 * 60 * 1000L);
-        discovery.setLongRunning(true);
+        deviceDiscovery = new BluetoothDeviceDiscovery(this, taskRunner);
+        deviceDiscovery.setPeriodicity(5 * 60 * 1000L);
+        deviceDiscovery.setLongRunning(true);
+
+        // run every
 
         // run every 3 seconds
         checkPowerStatus = new CheckPowerStatus(taskRunner, this);
