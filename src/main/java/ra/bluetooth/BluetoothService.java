@@ -44,13 +44,14 @@ public final class BluetoothService extends NetworkService {
     private File bluetoothDir;
 
     final Map<String, RemoteDevice> devices = new HashMap<>();
-    final Map<String, NetworkPeer> peersInDiscovery = new HashMap<>();
+    // Peers returned from local peers - may not be accessible directly - provided to build propagating network
+    final Map<String, NetworkPeer> peersOfPeers = new HashMap<>();
 
     private CheckPowerStatus checkPowerStatus;
 
     private boolean discoveryRunning = false;
-    private BluetoothDeviceDiscovery deviceDiscovery;
-    private BluetoothPeerDiscovery peerDiscovery;
+//    private BluetoothDeviceDiscovery deviceDiscovery;
+    private BluetoothPeerDiscovery discovery;
     private TaskRunner taskRunner;
 
     private Thread taskRunnerThread;
@@ -133,7 +134,7 @@ public final class BluetoothService extends NetworkService {
     public boolean startDiscovery() {
         LOG.info("Is Bluetooth Radio On: "+LocalDevice.isPowerOn());
         if(LocalDevice.isPowerOn()) {
-            taskRunner.addTask(deviceDiscovery);
+            taskRunner.addTask(discovery);
             discoveryRunning = true;
             return true;
         }
@@ -141,7 +142,7 @@ public final class BluetoothService extends NetworkService {
     }
 
     public boolean stopDiscovery() {
-        taskRunner.removeTask(deviceDiscovery, true);
+        taskRunner.removeTask(discovery, true);
         discoveryRunning = false;
         return true;
     }
@@ -200,9 +201,9 @@ public final class BluetoothService extends NetworkService {
         }
 
         // run every 5 minutes for now - may want to lower going into production
-        deviceDiscovery = new BluetoothDeviceDiscovery(this, taskRunner);
-        deviceDiscovery.setPeriodicity(5 * 60 * 1000L);
-        deviceDiscovery.setLongRunning(true);
+        discovery = new BluetoothPeerDiscovery(this, taskRunner);
+        discovery.setPeriodicity(5 * 60 * 1000L);
+        discovery.setLongRunning(true);
 
         // run every
 

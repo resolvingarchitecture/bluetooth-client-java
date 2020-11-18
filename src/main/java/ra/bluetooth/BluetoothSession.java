@@ -5,6 +5,7 @@ import ra.common.network.BaseClientSession;
 import ra.common.network.NetworkClientSession;
 import ra.common.network.NetworkPeer;
 import ra.common.network.NetworkStatus;
+import ra.common.route.ExternalRoute;
 import ra.common.route.SimpleRoute;
 
 import javax.bluetooth.BluetoothStateException;
@@ -15,13 +16,14 @@ import javax.obex.*;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.List;
 import java.util.logging.Logger;
 
 class BluetoothSession extends BaseClientSession {
 
     private static final Logger LOG = Logger.getLogger(BluetoothSession.class.getName());
 
-    private BluetoothService service;
+    private final BluetoothService service;
     private ClientSession clientSession;
     private SessionNotifier sessionNotifier;
     private RequestHandler handler;
@@ -87,7 +89,7 @@ class BluetoothSession extends BaseClientSession {
                 String url = "btgoep://localhost:"+uuid+";name=1M5";
                 LOG.info("Setting up listener on: "+url);
                 sessionNotifier = (SessionNotifier) Connector.open(url);
-                handler = new RequestHandler(this);
+                handler = new RequestHandler(service, this);
             } catch (IOException e) {
                 LOG.warning(e.getLocalizedMessage());
                 return false;
@@ -190,9 +192,10 @@ class BluetoothSession extends BaseClientSession {
 
     private static class RequestHandler extends ServerRequestHandler {
 
+        private BluetoothService service;
         private BluetoothSession session;
 
-        private RequestHandler (BluetoothSession session) {
+        private RequestHandler (BluetoothService service, BluetoothSession session) {
             this.session = session;
         }
 
@@ -216,8 +219,14 @@ class BluetoothSession extends BaseClientSession {
 //
 //        }
 
+        /**
+         * Received a put operation pushing data to this peer.
+         * @param op
+         * @return
+         */
         public int onPut(Operation op) {
             LOG.info("Received Put Operation: "+op.toString());
+            Envelope envelope = Envelope.documentFactory();
             try {
                 HeaderSet hs = op.getReceivedHeaders();
                 String name = (String) hs.getHeader(HeaderSet.NAME);
@@ -230,7 +239,7 @@ class BluetoothSession extends BaseClientSession {
                     int appHeaderLength = appHeader.length;
                     byte tag = appHeader[0];
                     byte length = appHeader[1];
-
+                    LOG.info("headers: tag="+tag+"; length="+length);
                 }
 
                 InputStream is = op.openInputStream();
@@ -241,7 +250,9 @@ class BluetoothSession extends BaseClientSession {
                     buf.append((char) data);
                 }
 
-                LOG.info("got:" + buf.toString());
+                envelope.fromJSON(buf.toString());
+                LOG.info("Put received:" + envelope.toJSON());
+                service.send(envelope);
 
                 op.close();
                 return ResponseCodes.OBEX_HTTP_OK;
@@ -251,9 +262,15 @@ class BluetoothSession extends BaseClientSession {
             }
         }
 
+        /**
+         * Received a Get operation asking for data from this peer.
+         * @param op
+         * @return
+         */
         @Override
         public int onGet(Operation op) {
             LOG.info("Received Get Operation: "+op.toString());
+            Envelope envelope = Envelope.documentFactory();
             try {
                 HeaderSet hs = op.getReceivedHeaders();
                 String name = (String) hs.getHeader(HeaderSet.NAME);
@@ -269,7 +286,24 @@ class BluetoothSession extends BaseClientSession {
                     buf.append((char) data);
                 }
 
-                LOG.info("got:" + buf.toString());
+                envelope.fromJSON(buf.toString());
+                LOG.info("Get Request:" + envelope.toJSON());
+                if(envelope.markerPresent("NetOpReq")) {
+                    ExternalRoute er = (ExternalRoute)envelope.getRoute();
+                    LOG.info("Received NetOpReq id: "+envelope.getId().substring(0,7)+"... from: "+er.getOrigination().getDid().getPublicKey().getFingerprint().substring(0,7));
+                    List<NetworkPeer> recommendedPeers = (List<NetworkPeer>) envelope.getContent();
+                    if (recommendedPeers != null) {
+                        LOG.info(recommendedPeers.size() + " Known Peers Received.");
+                        service.addToKnownPeers(recommendedPeers);
+                    }
+                    envelope.mark("NetOpRes");
+                    envelope.addContent(service.getKnownPeers());
+                    envelope.addExternalRoute(BluetoothService.class.getName(), BluetoothService.OPERATION_PEER_STATUS_REPLY, service.getNetworkState().localPeer, er.getOrigination());
+                    envelope.ratchet();
+
+                    // TODO: Return back with PUT request
+
+                }
 
                 op.close();
                 return ResponseCodes.OBEX_HTTP_OK;
