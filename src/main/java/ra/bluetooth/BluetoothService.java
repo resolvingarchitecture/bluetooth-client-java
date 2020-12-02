@@ -58,8 +58,14 @@ public final class BluetoothService extends NetworkService {
 
     private Map<Integer, BluetoothSession> leased = new HashMap<>();
 
+    public BluetoothService() {
+        super();
+        getNetworkState().network = Network.Bluetooth;
+        taskRunner = new TaskRunner(1, 4);
+    }
+
     public BluetoothService(MessageProducer producer, ServiceStatusObserver observer) {
-        super(Network.Bluetooth.name(), producer, observer);
+        super(Network.Bluetooth, producer, observer);
         taskRunner = new TaskRunner(1, 4);
     }
 
@@ -319,7 +325,14 @@ public final class BluetoothService extends NetworkService {
             public boolean send(Envelope envelope, Client client) {
                 LOG.info("Sending with Client waiting: \n\t"+envelope.toJSON());
                 return  true;
-            }}, null);
+            }
+
+            @Override
+            public boolean deadLetter(Envelope envelope) {
+                    LOG.info("Dead lettering envelope: "+envelope.toJSON());
+                    return true;
+            }
+        }, null);
         service.start(new Properties());
         while(service.getServiceStatus() != ServiceStatus.SHUTDOWN || service.getServiceStatus() != ServiceStatus.GRACEFULLY_SHUTDOWN) {
             Wait.aSec(1);

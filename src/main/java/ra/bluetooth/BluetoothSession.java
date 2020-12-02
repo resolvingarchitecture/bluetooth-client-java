@@ -294,10 +294,11 @@ class BluetoothSession extends BaseClientSession {
                     List<NetworkPeer> recommendedPeers = (List<NetworkPeer>) envelope.getContent();
                     if (recommendedPeers != null) {
                         LOG.info(recommendedPeers.size() + " Known Peers Received.");
-                        service.addToKnownPeers(recommendedPeers);
+                        // TODO: Send to Network Manager Service
                     }
+                    // TODO: Request from Network Manager Known Peers
                     envelope.mark("NetOpRes");
-                    envelope.addContent(service.getKnownPeers());
+//                    envelope.addContent();
                     envelope.addExternalRoute(BluetoothService.class.getName(), BluetoothService.OPERATION_PEER_STATUS_REPLY, service.getNetworkState().localPeer, er.getOrigination());
                     envelope.ratchet();
 

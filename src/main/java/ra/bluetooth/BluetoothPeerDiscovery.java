@@ -86,7 +86,7 @@ public class BluetoothPeerDiscovery extends BaseTask implements DiscoveryListene
         NetworkPeer peer = service.peersOfPeers.get(remoteDevice.getBluetoothAddress());
         try {
             if(peer==null) {
-                peer = new NetworkPeer(Network.Bluetooth.name(), remoteDevice.getFriendlyName(true), "1234");
+                peer = new NetworkPeer(Network.Bluetooth, remoteDevice.getFriendlyName(true), "1234");
                 PublicKey pk = peer.getDid().getPublicKey();
                 pk.setAddress(remoteDevice.getBluetoothAddress());
                 pk.addAttribute("isAuthenticated", remoteDevice.isAuthenticated());
@@ -116,7 +116,7 @@ public class BluetoothPeerDiscovery extends BaseTask implements DiscoveryListene
                     0x0100 // Service name
             };
 
-            peer = new NetworkPeer(Network.Bluetooth.name());
+            peer = new NetworkPeer(Network.Bluetooth);
             peer.getDid().setUsername(remoteDevice.getFriendlyName(true));
             peer.getDid().getPublicKey().setAddress(remoteDevice.getBluetoothAddress());
             LOG.info("Searching services on " + peer.getDid().getUsername() + " address=" + peer.getDid().getPublicKey().getAddress());
