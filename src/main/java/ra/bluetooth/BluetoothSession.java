@@ -196,6 +196,7 @@ class BluetoothSession extends BaseClientSession {
         private BluetoothSession session;
 
         private RequestHandler (BluetoothService service, BluetoothSession session) {
+            this.service = service;
             this.session = session;
         }
 
