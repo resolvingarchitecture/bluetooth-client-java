@@ -2,7 +2,7 @@
 Client to local Bluetooth radio supporting Bluetooth Low-Energy to
 integrate with Bluetooth Mesh networks.
 
-Currently supporting Bluetooth version 4. Version 5 Bluetooth Mesh on roadmap;
+Currently supporting Bluetooth version 4. Version 5.1 Bluetooth Mesh on roadmap.
 
 
 ## Features
@@ -15,12 +15,6 @@ it requests peer information from that device.
 
 ### Ubuntu
 sudo apt-get install libbluetooth-dev
-
-### Raspberry Pi
-1. Verify Bluez installed: ```bluetoothd -v```
-1. If not installed, follow these directions: https://3pl46c46ctx02p7rzdsvsg21-wpengine.netdna-ssl.com/wp-content/uploads/2020/04/Developer-Study-Guide-How-to-Deploy-BlueZ-on-a-Raspberry-Pi-Board-as-a-Bluetooth-Mesh-Provisioner.pdf
-
-For version 5, ensure version 5.54, is installed.
 
 ## Development
 
