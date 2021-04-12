@@ -5,14 +5,14 @@
 
     <groupId>resolvingarchitecture</groupId>
 	<artifactId>bluetooth-client</artifactId>
-	<version>1.0.1</version>
+	<version>1.0.3</version>
 
 	<packaging>jar</packaging>
 
 	<name>ra-bluetooth-client</name>
 	<url>https://resolvingarchitecture.io</url>
 	<description>Resolving Architecture - Bluetooth Client</description>
-	<inceptionYear>2020</inceptionYear>
+	<inceptionYear>2019</inceptionYear>
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -37,7 +37,7 @@
 		<dependency>
 			<groupId>resolvingarchitecture</groupId>
 			<artifactId>common</artifactId>
-			<version>1.0.1</version>
+			<version>1.0.3</version>
 		</dependency>
 
         <dependency>
