@@ -9,10 +9,10 @@ import ra.common.route.Route;
 import ra.common.route.SimpleRoute;
 import ra.common.service.ServiceStatus;
 import ra.common.service.ServiceStatusObserver;
-import ra.util.Config;
-import ra.util.SystemSettings;
-import ra.util.Wait;
-import ra.util.tasks.TaskRunner;
+import ra.common.Config;
+import ra.common.SystemSettings;
+import ra.common.Wait;
+import ra.common.tasks.TaskRunner;
 
 import javax.bluetooth.BluetoothStateException;
 import javax.bluetooth.DiscoveryAgent;

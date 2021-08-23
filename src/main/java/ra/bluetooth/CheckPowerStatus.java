@@ -1,7 +1,7 @@
 package ra.bluetooth;
 
-import ra.util.tasks.BaseTask;
-import ra.util.tasks.TaskRunner;
+import ra.common.tasks.BaseTask;
+import ra.common.tasks.TaskRunner;
 
 import javax.bluetooth.LocalDevice;
 import java.util.logging.Logger;

@@ -5,8 +5,8 @@ import ra.common.identity.PublicKey;
 import ra.common.network.Network;
 import ra.common.network.NetworkPeer;
 import ra.common.network.NetworkStatus;
-import ra.util.tasks.BaseTask;
-import ra.util.tasks.TaskRunner;
+import ra.common.tasks.BaseTask;
+import ra.common.tasks.TaskRunner;
 
 import javax.bluetooth.*;
 import java.io.IOException;
